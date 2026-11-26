@@ -1,4 +1,5 @@
 using CsvHelper;
+using CsvHelper.Configuration;
 using HtmlMarkupRepairTool.Infrastructure;
 using HtmlMarkupRepairTool.Models;
 using Spectre.Console;
@@ -20,14 +21,14 @@ internal sealed class CsvValidationScanner
             Path.GetDirectoryName(inputPath)!,
             Path.GetFileNameWithoutExtension(inputPath) + "_errors.csv");
 
-        AnsiConsole.MarkupLine($"[grey]Исходный CSV:[/] {Markup.Escape(inputPath)}");
-        AnsiConsole.MarkupLine($"[grey]Отчёт:[/]      {Markup.Escape(outputPath)}");
-        AnsiConsole.MarkupLine($"[grey]Разделитель:[/]   {Markup.Escape(CsvFileUtility.DisplayDelimiter(delimiter))}");
+        AnsiConsole.MarkupLine($"[grey]Source CSV:[/] {Markup.Escape(inputPath)}");
+        AnsiConsole.MarkupLine($"[grey]Report:[/]      {Markup.Escape(outputPath)}");
+        AnsiConsole.MarkupLine($"[grey]Delimiter:[/]   {Markup.Escape(CsvFileUtility.DisplayDelimiter(delimiter))}");
         AnsiConsole.WriteLine();
 
         var config = CsvFileUtility.CreateConfiguration(delimiter);
         var errorsByProduct = new SortedDictionary<long, HashSet<HtmlValidationError>>();
-        var errorКоличествоsByТэг = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        var errorCountsByTag = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
         var allProductIds = new HashSet<long>();
         var processedRows = 0L;
         var rowsWithErrors = 0L;
@@ -54,7 +55,7 @@ internal sealed class CsvValidationScanner
         if (productIdIndex < 0 || descriptionIndex < 0)
         {
             AnsiConsole.MarkupLine("[red]Не найдены обязательные столбцы PRODUCT_ID и Description.[/]");
-            AnsiConsole.MarkupLine($"[grey]Обнаруженные заголовки:[/] {Markup.Escape(string.Join(" | ", headers))}");
+            AnsiConsole.MarkupLine($"[grey]Found headers:[/] {Markup.Escape(string.Join(" | ", headers))}");
             return;
         }
 
@@ -81,7 +82,7 @@ internal sealed class CsvValidationScanner
                     var description = csvReader.GetField(descriptionIndex) ?? string.Empty;
                     var errors = _htmlValidator.Check(WebUtility.HtmlDecode(description));
 
-                    if (errors.Количество > 0)
+                    if (errors.Count > 0)
                     {
                         rowsWithErrors++;
 
@@ -96,15 +97,15 @@ internal sealed class CsvValidationScanner
                             if (!productErrors.Add(error))
                                 continue;
 
-                            errorКоличествоsByТэг.TryGetValue(error.ТэгName, out var count);
-                            errorКоличествоsByТэг[error.ТэгName] = count + 1;
+                            errorCountsByTag.TryGetValue(error.TagName, out var count);
+                            errorCountsByTag[error.TagName] = count + 1;
                         }
                     }
 
                     if (processedRows - lastUpdate >= 250)
                     {
                         task.Description =
-                            $"[green]Проверка HTML[/] [grey]Строк: {processedСтрок:N0} · Товаров с ошибками: {errorsByProduct.Количество:N0}[/]";
+                            $"[green]Проверка HTML[/] [grey]Строк: {processedRows:N0} · Товаров с ошибками: {errorsByProduct.Count:N0}[/]";
                         lastUpdate = processedRows;
                     }
 
@@ -113,21 +114,22 @@ internal sealed class CsvValidationScanner
 
                 task.Value = task.MaxValue;
                 task.Description =
-                    $"[green]Проверка завершена[/] [grey]Строк: {processedСтрок:N0} · Товаров с ошибками: {errorsByProduct.Количество:N0}[/]";
+                    $"[green]Проверка завершена[/] [grey]Строк: {processedRows:N0} · Товаров с ошибками: {errorsByProduct.Count:N0}[/]";
             });
 
-        var selectedТэгs = SelectТэгs(errorКоличествоsByТэг);
-        WriteReport(outputPath, config, errorsByProduct, selectedТэгs);
+        var selectedTags = SelectTags(errorCountsByTag);
+        WriteReport(outputPath, config, errorsByProduct, selectedTags);
 
         AnsiConsole.WriteLine();
-        ShowSummary(processedRows, allProductIds.Количество, rowsWithErrors, errorsByProduct.Количество);
+        ShowSummary(processedRows, allProductIds.Count, rowsWithErrors, errorsByProduct.Count);
+        ShowProductErrors(errorsByProduct);
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"[green]Отчёт сохранён:[/] {Markup.Escape(outputPath)}");
+        AnsiConsole.MarkupLine($"[green]Report saved:[/] {Markup.Escape(outputPath)}");
     }
 
-    private static HashSet<string> SelectТэгs(IReadOnlyDictionary<string, long> errorКоличествоsByТэг)
+    private static HashSet<string> SelectTags(IReadOnlyDictionary<string, long> errorCountsByTag)
     {
-        if (errorКоличествоsByТэг.Количество == 0)
+        if (errorCountsByTag.Count == 0)
         {
             AnsiConsole.MarkupLine("[green]Ошибок HTML-разметки не обнаружено.[/]");
             return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -137,7 +139,7 @@ internal sealed class CsvValidationScanner
         table.AddColumn("[grey]Тэг[/]");
         table.AddColumn(new TableColumn("[grey]Количество ошибок[/]").RightAligned());
 
-        foreach (var item in errorКоличествоsByТэг.OrderByDescending(x => x.Value).ThenBy(x => x.Key))
+        foreach (var item in errorCountsByTag.OrderByDescending(x => x.Value).ThenBy(x => x.Key))
         {
             var label = item.Key == "unknown" ? "[yellow]Не определён[/]" : Markup.Escape($"<{item.Key}>");
             table.AddRow(label, item.Value.ToString("N0"));
@@ -146,7 +148,7 @@ internal sealed class CsvValidationScanner
         AnsiConsole.MarkupLine("[bold]Ошибки по тэгам[/]");
         AnsiConsole.Write(table);
 
-        var tags = errorКоличествоsByТэг
+        var tags = errorCountsByTag
             .OrderByDescending(x => x.Value)
             .ThenBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
             .Select(x => x.Key)
@@ -158,7 +160,7 @@ internal sealed class CsvValidationScanner
             .PageSize(Math.Min(Math.Max(tags.Length, 5), 20))
             .InstructionsText("[grey](Пробел — отметить/снять, Enter — продолжить)[/]")
             .AddChoices(tags)
-            .UseConverter(tag => tag == "unknown" ? "Не определён tag" : $"<{tag}>");
+            .UseConverter(tag => tag == "unknown" ? "Не определённый тэг" : $"<{tag}>");
 
         foreach (var tag in tags)
             prompt.Select(tag);
@@ -170,7 +172,7 @@ internal sealed class CsvValidationScanner
         string outputPath,
         CsvConfiguration config,
         IReadOnlyDictionary<long, HashSet<HtmlValidationError>> errorsByProduct,
-        HashSet<string> selectedТэгs)
+        HashSet<string> selectedTags)
     {
         using var outputWriter = new StreamWriter(
             outputPath, append: false,
@@ -185,8 +187,8 @@ internal sealed class CsvValidationScanner
         foreach (var product in errorsByProduct)
         {
             var errors = product.Value
-                .Where(error => selectedТэгs.Contains(error.ТэгName))
-                .OrderBy(error => error.ТэгName, StringComparer.OrdinalIgnoreCase)
+                .Where(error => selectedTags.Contains(error.TagName))
+                .OrderBy(error => error.TagName, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(error => error.Message, StringComparer.Ordinal)
                 .ToArray();
 
@@ -198,6 +200,29 @@ internal sealed class CsvValidationScanner
             csvWriter.WriteField(string.Join("; ", errors.Select(error => error.Message)));
             csvWriter.NextRecord();
         }
+    }
+
+    private static void ShowProductErrors(
+        IReadOnlyDictionary<long, HashSet<HtmlValidationError>> errorsByProduct)
+    {
+        if (errorsByProduct.Count == 0)
+            return;
+
+        var table = new Table().Border(TableBorder.Rounded);
+        table.AddColumn("[grey]PRODUCT_ID[/]");
+        table.AddColumn(new TableColumn("[grey]Ошибок[/]").RightAligned());
+        table.AddColumn("[grey]Описание ошибок[/]");
+
+        foreach (var product in errorsByProduct)
+        {
+            var errors = product.Value.OrderBy(error => error.Message, StringComparer.Ordinal).ToArray();
+            table.AddRow(
+                product.Key.ToString(CultureInfo.InvariantCulture),
+                errors.Length.ToString(CultureInfo.InvariantCulture),
+                Markup.Escape(string.Join("; ", errors.Select(error => error.Message))));
+        }
+
+        AnsiConsole.Write(table);
     }
 
     private static void ShowSummary(
