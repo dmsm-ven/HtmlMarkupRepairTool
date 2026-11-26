@@ -54,10 +54,10 @@ internal sealed class ProductRepairService
         var delimiter = CsvFileUtility.DetectDelimiter(inputPath);
         var fileSize = new FileInfo(inputPath).Length;
 
-        AnsiConsole.MarkupLine($"[grey]Input CSV:[/] {Markup.Escape(inputPath)}");
-        AnsiConsole.MarkupLine($"[grey]SQL file:[/]   {Markup.Escape(outputPath)}");
-        AnsiConsole.MarkupLine($"[grey]Products:[/]   {requestedIds.Count:N0}");
-        AnsiConsole.MarkupLine($"[grey]Delimiter:[/]  {Markup.Escape(CsvFileUtility.DisplayDelimiter(delimiter))}");
+        AnsiConsole.MarkupLine($"[grey]Входной CSV:[/] {Markup.Escape(inputPath)}");
+        AnsiConsole.MarkupLine($"[grey]SQL-файл:[/]   {Markup.Escape(outputPath)}");
+        AnsiConsole.MarkupLine($"[grey]Товаров:[/]   {requestedIds.Count:N0}");
+        AnsiConsole.MarkupLine($"[grey]Разделитель:[/]  {Markup.Escape(CsvFileUtility.DisplayDelimiter(delimiter))}");
 
         if (languageId.HasValue)
             AnsiConsole.MarkupLine($"[grey]language_id:[/] {languageId.Value}");
@@ -94,7 +94,7 @@ internal sealed class ProductRepairService
         if (productIdIndex < 0 || descriptionIndex < 0)
         {
             AnsiConsole.MarkupLine("[red]Не найдены обязательные столбцы PRODUCT_ID и Description.[/]");
-            AnsiConsole.MarkupLine($"[grey]Found headers:[/] {Markup.Escape(string.Join(" | ", headers))}");
+            AnsiConsole.MarkupLine($"[grey]Обнаруженные заголовки:[/] {Markup.Escape(string.Join(" | ", headers))}");
             return 1;
         }
 
@@ -182,10 +182,10 @@ internal sealed class ProductRepairService
         }
 
         if (missingIds.Count > 0)
-            AnsiConsole.MarkupLine($"[yellow]IDs not found:[/] {Markup.Escape(string.Join(", ", missingIds))}");
+            AnsiConsole.MarkupLine($"[yellow]Не найдены ID:[/] {Markup.Escape(string.Join(", ", missingIds))}");
 
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"[green]SQL file saved:[/] {Markup.Escape(outputPath)}");
+        AnsiConsole.MarkupLine($"[green]SQL-файл сохранён:[/] {Markup.Escape(outputPath)}");
 
         if (repairedProducts.Count == 0)
             AnsiConsole.MarkupLine("[yellow]Изменений не обнаружено. SQL-файл не содержит UPDATE-запросов.[/]");
