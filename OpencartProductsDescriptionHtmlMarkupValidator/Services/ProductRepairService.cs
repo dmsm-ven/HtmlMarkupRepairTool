@@ -82,7 +82,7 @@ internal sealed class ProductRepairService
 
         if (!csvReader.Read())
         {
-            AnsiConsole.MarkupLine("[yellow]CSV file is empty.[/]");
+            AnsiConsole.MarkupLine("[yellow]CSV-файл пуст.[/]");
             return 0;
         }
 
@@ -93,7 +93,7 @@ internal sealed class ProductRepairService
 
         if (productIdIndex < 0 || descriptionIndex < 0)
         {
-            AnsiConsole.MarkupLine("[red]Required columns PRODUCT_ID and Description were not found.[/]");
+            AnsiConsole.MarkupLine("[red]Не найдены обязательные столбцы PRODUCT_ID и Description.[/]");
             AnsiConsole.MarkupLine($"[grey]Found headers:[/] {Markup.Escape(string.Join(" | ", headers))}");
             return 1;
         }
