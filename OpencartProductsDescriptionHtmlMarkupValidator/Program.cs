@@ -6,6 +6,7 @@ using Spectre.Console;
 using System.Globalization;
 using System.Net;
 using System.Text;
+using System.Text.RegularExpressions;
 
 // Usage:
 //   HtmlDescriptionChecker.exe "source.csv"                         - check all products
@@ -364,7 +365,7 @@ static string RepairHtmlFragment(string decodedHtml)
     return contextElement.InnerHtml;
 }
 
-static List<string> CheckHtml(string html)
+static List<HtmlValidationError> CheckHtml(string html)
 {
     var document = new HtmlDocument
     {
@@ -380,9 +381,40 @@ static List<string> CheckHtml(string html)
             HtmlParseErrorCode.TagNotClosed or
             HtmlParseErrorCode.TagNotOpened or
             HtmlParseErrorCode.EndTagInvalidHere)
-        .Select(error => $"{error.Code} (line {error.Line}, position {error.LinePosition})")
+        .Select(error =>
+        {
+            var tagName = ExtractErrorTagName(html, error.StreamPosition, error.Code);
+            var tagLabel = tagName is null ? "unknown" : $"<{tagName}>";
+            var message = $"{error.Code} {tagLabel} (line {error.Line}, position {error.LinePosition})";
+
+            return new HtmlValidationError(error.Code.ToString(), tagName ?? "unknown", message);
+        })
         .Distinct()
         .ToList();
+}
+
+static string? ExtractErrorTagName(string html, int streamPosition, HtmlParseErrorCode errorCode)
+{
+    // HtmlAgilityPack reports the position of the parser error. Inspect a small
+    // window around it and prefer a closing tag for unexpected/invalid end tags.
+    var position = Math.Clamp(streamPosition, 0, html.Length);
+    var start = Math.Max(0, position - 512);
+    var length = Math.Min(html.Length - start, 1024);
+    var window = html.Substring(start, length);
+    var matches = Regex.Matches(window, @"<\\s*(/?)\\s*([a-zA-Z][a-zA-Z0-9:_-]*)\\b[^>]*>");
+
+    if (matches.Count == 0)
+        return null;
+
+    var preferClosing = errorCode is HtmlParseErrorCode.TagNotOpened or HtmlParseErrorCode.EndTagInvalidHere;
+
+    var selected = matches
+        .Cast<Match>()
+        .OrderBy(match => Math.Abs((start + match.Index) - position))
+        .FirstOrDefault(match => (match.Groups[1].Value == "/") == preferClosing)
+        ?? matches.Cast<Match>().OrderBy(match => Math.Abs((start + match.Index) - position)).First();
+
+    return selected.Groups[2].Value.ToLowerInvariant();
 }
 
 static void ScanSourceFile(string inputPath)
@@ -408,7 +440,8 @@ static void ScanSourceFile(string inputPath)
         BufferSize = 1024 * 64
     };
 
-    var errorsByProduct = new SortedDictionary<long, HashSet<string>>();
+    var errorsByProduct = new SortedDictionary<long, HashSet<HtmlValidationError>>();
+    var errorCountsByTag = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
     var allProductIds = new HashSet<long>();
     var processedRows = 0L;
     var rowsWithErrors = 0L;
@@ -489,12 +522,18 @@ static void ScanSourceFile(string inputPath)
 
                     if (!errorsByProduct.TryGetValue(productId, out var productErrors))
                     {
-                        productErrors = new HashSet<string>(StringComparer.Ordinal);
+                        productErrors = new HashSet<HtmlValidationError>();
                         errorsByProduct.Add(productId, productErrors);
                     }
 
                     foreach (var error in errors)
-                        productErrors.Add(error);
+                    {
+                        if (productErrors.Add(error))
+                        {
+                            errorCountsByTag.TryGetValue(error.TagName, out var count);
+                            errorCountsByTag[error.TagName] = count + 1;
+                        }
+                    }
                 }
 
                 if (processedRows - lastUpdate >= 250)
@@ -512,26 +551,87 @@ static void ScanSourceFile(string inputPath)
                 $"[green]Проверка завершена[/] [grey]Строк: {processedRows:N0} · Товаров с ошибками: {errorsByProduct.Count:N0}[/]";
         });
 
-    using (var outputWriter = new StreamWriter(
-        outputPath,
-        append: false,
-        new UTF8Encoding(encoderShouldEmitUTF8Identifier: true)))
-    using (var csvWriter = new CsvWriter(outputWriter, config))
+    AnsiConsole.WriteLine();
+
+    var tagSummary = new Table().Border(TableBorder.Rounded);
+    tagSummary.AddColumn("[grey]Тэг[/]");
+    tagSummary.AddColumn(new TableColumn("[grey]Количество ошибок[/]").RightAligned());
+
+    foreach (var item in errorCountsByTag.OrderByDescending(item => item.Value).ThenBy(item => item.Key))
+        tagSummary.AddRow(item.Key == "unknown" ? "[yellow]Не определён[/]" : Markup.Escape($"<{item.Key}>"), item.Value.ToString("N0"));
+
+    if (errorCountsByTag.Count > 0)
     {
+        AnsiConsole.MarkupLine("[bold]Ошибки по тэгам[/]");
+        AnsiConsole.Write(tagSummary);
+
+        var tags = errorCountsByTag
+            .OrderByDescending(item => item.Value)
+            .ThenBy(item => item.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(item => item.Key)
+            .ToArray();
+
+        var selectedTags = AnsiConsole.Prompt(
+            new MultiSelectionPrompt<string>()
+                .Title("[bold]Выберите тэги, ошибки которых попадут в _errors.csv[/]")
+                .NotRequired()
+                .PageSize(Math.Min(Math.Max(tags.Length, 5), 20))
+                .InstructionsText("[grey](Пробел — отметить/снять, Enter — продолжить)[/]")
+                .AddChoices(tags)
+                .UseConverter(tag => tag == "unknown" ? "Не определённый тэг" : $"<{tag}>")
+                .Select(tags));
+
+        var selectedTagSet = selectedTags.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var filteredProducts = errorsByProduct
+            .Select(product => new
+            {
+                ProductId = product.Key,
+                Errors = product.Value
+                    .Where(error => selectedTagSet.Contains(error.TagName))
+                    .OrderBy(error => error.TagName, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(error => error.Message, StringComparer.Ordinal)
+                    .ToArray()
+            })
+            .Where(product => product.Errors.Length > 0)
+            .ToArray();
+
+        using var outputWriter = new StreamWriter(
+            outputPath,
+            append: false,
+            new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+        using var csvWriter = new CsvWriter(outputWriter, config);
+
         csvWriter.WriteField("PRODUCT_ID");
         csvWriter.WriteField("ERROR_COUNT");
         csvWriter.WriteField("ERRORS");
         csvWriter.NextRecord();
 
-        foreach (var product in errorsByProduct)
+        foreach (var product in filteredProducts)
         {
-            var errors = product.Value.OrderBy(error => error, StringComparer.Ordinal).ToArray();
-
-            csvWriter.WriteField(product.Key);
-            csvWriter.WriteField(errors.Length);
-            csvWriter.WriteField(string.Join("; ", errors));
+            csvWriter.WriteField(product.ProductId);
+            csvWriter.WriteField(product.Errors.Length);
+            csvWriter.WriteField(string.Join("; ", product.Errors.Select(error => error.Message)));
             csvWriter.NextRecord();
         }
+
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine($"[grey]Выбрано тэгов:[/] {selectedTagSet.Count} из {tags.Length}");
+        AnsiConsole.MarkupLine($"[grey]Товаров в отчёте:[/] {filteredProducts.Length:N0}");
+        AnsiConsole.MarkupLine($"[grey]Ошибок в отчёте:[/] {filteredProducts.Sum(product => product.Errors.Length):N0}");
+    }
+    else
+    {
+        using var outputWriter = new StreamWriter(
+            outputPath,
+            append: false,
+            new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+        using var csvWriter = new CsvWriter(outputWriter, config);
+        csvWriter.WriteField("PRODUCT_ID");
+        csvWriter.WriteField("ERROR_COUNT");
+        csvWriter.WriteField("ERRORS");
+        csvWriter.NextRecord();
+
+        AnsiConsole.MarkupLine("[green]Ошибок HTML-разметки не обнаружено.[/]");
     }
 
     AnsiConsole.WriteLine();
@@ -545,30 +645,6 @@ static void ScanSourceFile(string inputPath)
     summary.AddRow("Товаров с ошибками", $"[bold red]{errorsByProduct.Count:N0}[/]");
     summary.AddRow("Товаров без ошибок", (allProductIds.Count - errorsByProduct.Count).ToString("N0"));
     AnsiConsole.Write(summary);
-
-    if (errorsByProduct.Count > 0)
-    {
-        var resultTable = new Table().Border(TableBorder.Rounded);
-        resultTable.AddColumn("[grey]PRODUCT_ID[/]");
-        resultTable.AddColumn(new TableColumn("[grey]Ошибок[/]").RightAligned());
-        resultTable.AddColumn("[grey]Описание ошибок[/]");
-
-        foreach (var product in errorsByProduct)
-        {
-            var errors = product.Value.OrderBy(error => error, StringComparer.Ordinal).ToArray();
-            resultTable.AddRow(
-                product.Key.ToString(CultureInfo.InvariantCulture),
-                errors.Length.ToString(CultureInfo.InvariantCulture),
-                Markup.Escape(string.Join("; ", errors)));
-        }
-
-        AnsiConsole.Write(resultTable);
-    }
-    else
-    {
-        AnsiConsole.MarkupLine("[green]Ошибок HTML-разметки не обнаружено.[/]");
-    }
-
     AnsiConsole.WriteLine();
     AnsiConsole.MarkupLine($"[green]Отчёт сохранён:[/] {Markup.Escape(outputPath)}");
 }
@@ -674,6 +750,8 @@ static int CountOutsideQuotes(string line, char delimiter)
 
 static string DisplayDelimiter(string delimiter) =>
     delimiter == "\t" ? "TAB" : delimiter;
+
+sealed record HtmlValidationError(string ErrorCode, string TagName, string Message);
 
 sealed record RepairResult(
     long ProductId,
