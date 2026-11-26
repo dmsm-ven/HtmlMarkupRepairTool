@@ -401,7 +401,7 @@ static string? ExtractErrorTagName(string html, int streamPosition, HtmlParseErr
     var start = Math.Max(0, position - 512);
     var length = Math.Min(html.Length - start, 1024);
     var window = html.Substring(start, length);
-    var matches = Regex.Matches(window, @"<\\s*(/?)\\s*([a-zA-Z][a-zA-Z0-9:_-]*)\\b[^>]*>");
+    var matches = Regex.Matches(window, @"<\s*(/?)\s*([a-zA-Z][a-zA-Z0-9:_-]*)\b[^>]*>");
 
     if (matches.Count == 0)
         return null;
@@ -571,15 +571,19 @@ static void ScanSourceFile(string inputPath)
             .Select(item => item.Key)
             .ToArray();
 
-        var selectedTags = AnsiConsole.Prompt(
-            new MultiSelectionPrompt<string>()
-                .Title("[bold]Выберите тэги, ошибки которых попадут в _errors.csv[/]")
-                .NotRequired()
-                .PageSize(Math.Min(Math.Max(tags.Length, 5), 20))
-                .InstructionsText("[grey](Пробел — отметить/снять, Enter — продолжить)[/]")
-                .AddChoices(tags)
-                .UseConverter(tag => tag == "unknown" ? "Не определённый тэг" : $"<{tag}>")
-                .Select(tags));
+        var tagPrompt = new MultiSelectionPrompt<string>()
+            .Title("[bold]Выберите тэги, ошибки которых попадут в _errors.csv[/]")
+            .NotRequired()
+            .PageSize(Math.Min(Math.Max(tags.Length, 5), 20))
+            .InstructionsText("[grey](Пробел — отметить/снять, Enter — продолжить)[/]")
+            .AddChoices(tags)
+            .UseConverter(tag => tag == "unknown" ? "Не определённый тэг" : $"<{tag}>");
+
+        // Keep all tags selected by default so the initial report remains complete.
+        foreach (var tag in tags)
+            tagPrompt.Select(tag);
+
+        var selectedTags = AnsiConsole.Prompt(tagPrompt);
 
         var selectedTagSet = selectedTags.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var filteredProducts = errorsByProduct
