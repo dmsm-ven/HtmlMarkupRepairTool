@@ -28,24 +28,39 @@ AnsiConsole.MarkupLine("[bold dodgerblue1]OpenCart Description Repair[/]");
 AnsiConsole.MarkupLine("[grey]Нормализация HTML через AngleSharp (HTML5 parser)[/]");
 AnsiConsole.WriteLine();
 
-if (args.Length < 1)
+var interactiveMode = args.Length == 0;
+string? inputPathArgument;
+
+if (interactiveMode)
 {
-    AnsiConsole.MarkupLine("[grey]Использование:[/]");
-    AnsiConsole.WriteLine("  HtmlDescriptionChecker.exe \"source.csv\"");
-    AnsiConsole.WriteLine("  HtmlDescriptionChecker.exe \"products.csv\" \"12540,18732,25119\"");
-    AnsiConsole.WriteLine("  HtmlDescriptionChecker.exe \"products.csv\" \"12540,18732\" 1");
-    AnsiConsole.WriteLine("  HtmlDescriptionChecker.exe \"products.csv\" \"12540,18732\" 1 \"repairs.sql\"");
-    AnsiConsole.WriteLine();
-    AnsiConsole.MarkupLine("[grey]Если указан только CSV, программа проверит все товары и создаст *_errors.csv.[/]");
-    AnsiConsole.MarkupLine("[grey]Если указан список ID, программа перейдёт в режим исправления.[/]");
-    return;
+    AnsiConsole.MarkupLine("[bold]Введите полный путь к исходному CSV-файлу:[/]");
+    AnsiConsole.MarkupLine("[grey]Например: C:\\Data\\source.csv[/]");
+    AnsiConsole.Write("> ");
+    inputPathArgument = Console.ReadLine()?.Trim().Trim('"');
+
+    if (string.IsNullOrWhiteSpace(inputPathArgument))
+    {
+        AnsiConsole.MarkupLine("[yellow]Путь не указан. Завершение работы.[/]");
+        Console.WriteLine("Нажмите любую клавишу для выхода...");
+        Console.ReadKey(true);
+        return;
+    }
+}
+else
+{
+    inputPathArgument = args[0];
 }
 
-var inputPath = Path.GetFullPath(args[0]);
+var inputPath = Path.GetFullPath(inputPathArgument);
 
 if (!File.Exists(inputPath))
 {
     AnsiConsole.MarkupLine($"[red]Файл не найден:[/] {Markup.Escape(inputPath)}");
+    if (interactiveMode)
+    {
+        Console.WriteLine("Нажмите любую клавишу для выхода...");
+        Console.ReadKey(true);
+    }
     return;
 }
 
@@ -60,6 +75,13 @@ if (args.Length == 1)
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[red bold]Во время проверки произошла ошибка:[/]");
         AnsiConsole.WriteException(ex, ExceptionFormats.ShortenEverything);
+    }
+
+    if (interactiveMode)
+    {
+        Console.WriteLine();
+        Console.WriteLine("Проверка завершена. Нажмите любую клавишу для выхода...");
+        Console.ReadKey(true);
     }
 
     return;
