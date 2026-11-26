@@ -13,7 +13,7 @@ public sealed class HtmlMarkupRepairApplication
     {
         Console.OutputEncoding = Encoding.UTF8;
         AnsiConsole.MarkupLine("[bold dodgerblue1]OpenCart Description Repair[/]");
-        AnsiConsole.MarkupLine("[grey]HTML validation and normalization tool[/]");
+        AnsiConsole.MarkupLine("[grey]Нормализация HTML через AngleSharp (HTML5 parser)[/]");
         AnsiConsole.WriteLine();
 
         var interactiveMode = args.Length == 0;
@@ -27,7 +27,7 @@ public sealed class HtmlMarkupRepairApplication
         var inputPath = Path.GetFullPath(inputPathArgument);
         if (!File.Exists(inputPath))
         {
-            AnsiConsole.MarkupLine($"[red]File not found:[/] {Markup.Escape(inputPath)}");
+            AnsiConsole.MarkupLine($"[red]Файл не найден:[/] {Markup.Escape(inputPath)}");
             WaitForExit(interactiveMode);
             return 1;
         }
@@ -63,15 +63,15 @@ public sealed class HtmlMarkupRepairApplication
 
     private static string? ReadInputPath()
     {
-        AnsiConsole.MarkupLine("[bold]Enter the full path to the source CSV file:[/]");
-        AnsiConsole.MarkupLine("[grey]Example: C:\\Data\\source.csv[/]");
+        AnsiConsole.MarkupLine("[bold]Введите полный путь к исходному CSV-файлу:[/]");
+        AnsiConsole.MarkupLine("[grey]Например: C:\\Data\\source.csv[/]");
         AnsiConsole.Write("> ");
         var path = Console.ReadLine()?.Trim().Trim('"');
 
         if (!string.IsNullOrWhiteSpace(path))
             return path;
 
-        AnsiConsole.MarkupLine("[yellow]No path was provided.[/]");
+        AnsiConsole.MarkupLine("[yellow]Путь не указан. Завершение работы.[/]");
         return null;
     }
 
@@ -81,14 +81,14 @@ public sealed class HtmlMarkupRepairApplication
             return;
 
         Console.WriteLine();
-        Console.WriteLine("Press any key to exit...");
+        Console.WriteLine("Проверка завершена. Нажмите любую клавишу для выхода...");
         Console.ReadKey(true);
     }
 
     private static void ShowError(Exception exception)
     {
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[red bold]An error occurred:[/]");
+        AnsiConsole.MarkupLine("[red bold]Во время выполнения произошла ошибка:[/]");
         AnsiConsole.WriteException(exception, ExceptionFormats.ShortenEverything);
     }
 }
