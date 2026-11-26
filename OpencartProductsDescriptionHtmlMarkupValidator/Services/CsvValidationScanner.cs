@@ -20,14 +20,14 @@ internal sealed class CsvValidationScanner
             Path.GetDirectoryName(inputPath)!,
             Path.GetFileNameWithoutExtension(inputPath) + "_errors.csv");
 
-        AnsiConsole.MarkupLine($"[grey]Source CSV:[/] {Markup.Escape(inputPath)}");
-        AnsiConsole.MarkupLine($"[grey]Report:[/]      {Markup.Escape(outputPath)}");
-        AnsiConsole.MarkupLine($"[grey]Delimiter:[/]   {Markup.Escape(CsvFileUtility.DisplayDelimiter(delimiter))}");
+        AnsiConsole.MarkupLine($"[grey]Исходный CSV:[/] {Markup.Escape(inputPath)}");
+        AnsiConsole.MarkupLine($"[grey]Отчёт:[/]      {Markup.Escape(outputPath)}");
+        AnsiConsole.MarkupLine($"[grey]Разделитель:[/]   {Markup.Escape(CsvFileUtility.DisplayDelimiter(delimiter))}");
         AnsiConsole.WriteLine();
 
         var config = CsvFileUtility.CreateConfiguration(delimiter);
         var errorsByProduct = new SortedDictionary<long, HashSet<HtmlValidationError>>();
-        var errorCountsByTag = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        var errorКоличествоsByТэг = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
         var allProductIds = new HashSet<long>();
         var processedRows = 0L;
         var rowsWithErrors = 0L;
@@ -42,7 +42,7 @@ internal sealed class CsvValidationScanner
 
         if (!csvReader.Read())
         {
-            AnsiConsole.MarkupLine("[yellow]CSV file is empty.[/]");
+            AnsiConsole.MarkupLine("[yellow]CSV-файл пуст.[/]");
             return;
         }
 
@@ -53,8 +53,8 @@ internal sealed class CsvValidationScanner
 
         if (productIdIndex < 0 || descriptionIndex < 0)
         {
-            AnsiConsole.MarkupLine("[red]Required columns PRODUCT_ID and Description were not found.[/]");
-            AnsiConsole.MarkupLine($"[grey]Found headers:[/] {Markup.Escape(string.Join(" | ", headers))}");
+            AnsiConsole.MarkupLine("[red]Не найдены обязательные столбцы PRODUCT_ID и Description.[/]");
+            AnsiConsole.MarkupLine($"[grey]Обнаруженные заголовки:[/] {Markup.Escape(string.Join(" | ", headers))}");
             return;
         }
 
@@ -65,7 +65,7 @@ internal sealed class CsvValidationScanner
                 new PercentageColumn(), new RemainingTimeColumn(), new SpinnerColumn())
             .Start(context =>
             {
-                var task = context.AddTask("[green]Validating HTML[/]", maxValue: Math.Max(fileSize, 1));
+                var task = context.AddTask("[green]Проверка HTML[/]", maxValue: Math.Max(fileSize, 1));
                 var lastUpdate = 0L;
 
                 while (csvReader.Read())
@@ -81,7 +81,7 @@ internal sealed class CsvValidationScanner
                     var description = csvReader.GetField(descriptionIndex) ?? string.Empty;
                     var errors = _htmlValidator.Check(WebUtility.HtmlDecode(description));
 
-                    if (errors.Count > 0)
+                    if (errors.Количество > 0)
                     {
                         rowsWithErrors++;
 
@@ -96,15 +96,15 @@ internal sealed class CsvValidationScanner
                             if (!productErrors.Add(error))
                                 continue;
 
-                            errorCountsByTag.TryGetValue(error.TagName, out var count);
-                            errorCountsByTag[error.TagName] = count + 1;
+                            errorКоличествоsByТэг.TryGetValue(error.ТэгName, out var count);
+                            errorКоличествоsByТэг[error.ТэгName] = count + 1;
                         }
                     }
 
                     if (processedRows - lastUpdate >= 250)
                     {
                         task.Description =
-                            $"[green]HTML validation[/] [grey]Rows: {processedRows:N0} · Products with errors: {errorsByProduct.Count:N0}[/]";
+                            $"[green]Проверка HTML[/] [grey]Строк: {processedСтрок:N0} · Товаров с ошибками: {errorsByProduct.Количество:N0}[/]";
                         lastUpdate = processedRows;
                     }
 
@@ -113,52 +113,52 @@ internal sealed class CsvValidationScanner
 
                 task.Value = task.MaxValue;
                 task.Description =
-                    $"[green]Validation complete[/] [grey]Rows: {processedRows:N0} · Products with errors: {errorsByProduct.Count:N0}[/]";
+                    $"[green]Проверка завершена[/] [grey]Строк: {processedСтрок:N0} · Товаров с ошибками: {errorsByProduct.Количество:N0}[/]";
             });
 
-        var selectedTags = SelectTags(errorCountsByTag);
-        WriteReport(outputPath, config, errorsByProduct, selectedTags);
+        var selectedТэгs = SelectТэгs(errorКоличествоsByТэг);
+        WriteReport(outputPath, config, errorsByProduct, selectedТэгs);
 
         AnsiConsole.WriteLine();
-        ShowSummary(processedRows, allProductIds.Count, rowsWithErrors, errorsByProduct.Count);
+        ShowSummary(processedRows, allProductIds.Количество, rowsWithErrors, errorsByProduct.Количество);
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"[green]Report saved:[/] {Markup.Escape(outputPath)}");
+        AnsiConsole.MarkupLine($"[green]Отчёт сохранён:[/] {Markup.Escape(outputPath)}");
     }
 
-    private static HashSet<string> SelectTags(IReadOnlyDictionary<string, long> errorCountsByTag)
+    private static HashSet<string> SelectТэгs(IReadOnlyDictionary<string, long> errorКоличествоsByТэг)
     {
-        if (errorCountsByTag.Count == 0)
+        if (errorКоличествоsByТэг.Количество == 0)
         {
-            AnsiConsole.MarkupLine("[green]No HTML markup errors were found.[/]");
+            AnsiConsole.MarkupLine("[green]Ошибок HTML-разметки не обнаружено.[/]");
             return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         }
 
         var table = new Table().Border(TableBorder.Rounded);
-        table.AddColumn("[grey]Tag[/]");
-        table.AddColumn(new TableColumn("[grey]Error count[/]").RightAligned());
+        table.AddColumn("[grey]Тэг[/]");
+        table.AddColumn(new TableColumn("[grey]Количество ошибок[/]").RightAligned());
 
-        foreach (var item in errorCountsByTag.OrderByDescending(x => x.Value).ThenBy(x => x.Key))
+        foreach (var item in errorКоличествоsByТэг.OrderByDescending(x => x.Value).ThenBy(x => x.Key))
         {
-            var label = item.Key == "unknown" ? "[yellow]Unknown[/]" : Markup.Escape($"<{item.Key}>");
+            var label = item.Key == "unknown" ? "[yellow]Не определён[/]" : Markup.Escape($"<{item.Key}>");
             table.AddRow(label, item.Value.ToString("N0"));
         }
 
-        AnsiConsole.MarkupLine("[bold]Errors by tag[/]");
+        AnsiConsole.MarkupLine("[bold]Ошибки по тэгам[/]");
         AnsiConsole.Write(table);
 
-        var tags = errorCountsByTag
+        var tags = errorКоличествоsByТэг
             .OrderByDescending(x => x.Value)
             .ThenBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
             .Select(x => x.Key)
             .ToArray();
 
         var prompt = new MultiSelectionPrompt<string>()
-            .Title("[bold]Select tags to include in _errors.csv[/]")
+            .Title("[bold]Выберите тэги, ошибки которых попадут в _errors.csv[/]")
             .NotRequired()
             .PageSize(Math.Min(Math.Max(tags.Length, 5), 20))
-            .InstructionsText("[grey](Space — toggle, Enter — continue)[/]")
+            .InstructionsText("[grey](Пробел — отметить/снять, Enter — продолжить)[/]")
             .AddChoices(tags)
-            .UseConverter(tag => tag == "unknown" ? "Unknown tag" : $"<{tag}>");
+            .UseConverter(tag => tag == "unknown" ? "Не определён tag" : $"<{tag}>");
 
         foreach (var tag in tags)
             prompt.Select(tag);
@@ -170,7 +170,7 @@ internal sealed class CsvValidationScanner
         string outputPath,
         CsvConfiguration config,
         IReadOnlyDictionary<long, HashSet<HtmlValidationError>> errorsByProduct,
-        HashSet<string> selectedTags)
+        HashSet<string> selectedТэгs)
     {
         using var outputWriter = new StreamWriter(
             outputPath, append: false,
@@ -185,8 +185,8 @@ internal sealed class CsvValidationScanner
         foreach (var product in errorsByProduct)
         {
             var errors = product.Value
-                .Where(error => selectedTags.Contains(error.TagName))
-                .OrderBy(error => error.TagName, StringComparer.OrdinalIgnoreCase)
+                .Where(error => selectedТэгs.Contains(error.ТэгName))
+                .OrderBy(error => error.ТэгName, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(error => error.Message, StringComparer.Ordinal)
                 .ToArray();
 
@@ -204,13 +204,13 @@ internal sealed class CsvValidationScanner
         long processedRows, int uniqueProducts, long rowsWithErrors, int productsWithErrors)
     {
         var table = new Table().Border(TableBorder.Rounded);
-        table.AddColumn("[grey]Metric[/]");
-        table.AddColumn(new TableColumn("[grey]Count[/]").RightAligned());
-        table.AddRow("CSV rows processed", processedRows.ToString("N0"));
-        table.AddRow("Unique products", uniqueProducts.ToString("N0"));
-        table.AddRow("Rows with errors", rowsWithErrors.ToString("N0"));
-        table.AddRow("Products with errors", $"[bold red]{productsWithErrors:N0}[/]");
-        table.AddRow("Products without errors", (uniqueProducts - productsWithErrors).ToString("N0"));
+        table.AddColumn("[grey]Показатель[/]");
+        table.AddColumn(new TableColumn("[grey]Количество[/]").RightAligned());
+        table.AddRow("Строк CSV обработано", processedRows.ToString("N0"));
+        table.AddRow("Уникальных товаров", uniqueProducts.ToString("N0"));
+        table.AddRow("Строк с ошибками", rowsWithErrors.ToString("N0"));
+        table.AddRow("Товаров с ошибками", $"[bold red]{productsWithErrors:N0}[/]");
+        table.AddRow("Товаров без ошибок", (uniqueProducts - productsWithErrors).ToString("N0"));
         AnsiConsole.Write(table);
     }
 }
