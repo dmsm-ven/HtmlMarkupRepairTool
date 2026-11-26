@@ -1,4 +1,4 @@
-﻿using AngleSharp.Html.Parser;
+using AngleSharp.Html.Parser;
 using CsvHelper;
 using CsvHelper.Configuration;
 using HtmlAgilityPack;
@@ -8,13 +8,14 @@ using System.Net;
 using System.Text;
 
 // Usage:
-//   HtmlDescriptionChecker.exe "products.csv" "12540,18732,25119"
+//   HtmlDescriptionChecker.exe "source.csv"                         - check all products
+//   HtmlDescriptionChecker.exe "products.csv" "12540,18732,25119"  - repair selected products
 //   HtmlDescriptionChecker.exe "products.csv" "12540,18732" 1
 //   HtmlDescriptionChecker.exe "products.csv" "12540,18732" 1 "repairs.sql"
 //
 // Arguments:
 //   1. CSV exported from DBeaver; columns PRODUCT_ID and Description.
-//   2. Comma-separated product IDs to repair.
+//   2. Optional: comma-separated product IDs to repair. When omitted, all products are checked.
 //   3. Optional OpenCart language_id. If omitted, UPDATE affects all language rows
 //      for each product_id.
 //   4. Optional output SQL file path.
@@ -27,15 +28,16 @@ AnsiConsole.MarkupLine("[bold dodgerblue1]OpenCart Description Repair[/]");
 AnsiConsole.MarkupLine("[grey]Нормализация HTML через AngleSharp (HTML5 parser)[/]");
 AnsiConsole.WriteLine();
 
-if (args.Length < 2)
+if (args.Length < 1)
 {
     AnsiConsole.MarkupLine("[grey]Использование:[/]");
+    AnsiConsole.WriteLine("  HtmlDescriptionChecker.exe \"source.csv\"");
     AnsiConsole.WriteLine("  HtmlDescriptionChecker.exe \"products.csv\" \"12540,18732,25119\"");
     AnsiConsole.WriteLine("  HtmlDescriptionChecker.exe \"products.csv\" \"12540,18732\" 1");
     AnsiConsole.WriteLine("  HtmlDescriptionChecker.exe \"products.csv\" \"12540,18732\" 1 \"repairs.sql\"");
     AnsiConsole.WriteLine();
-    AnsiConsole.MarkupLine("[grey]Аргумент 3 (необязательно): language_id OpenCart.[/]");
-    AnsiConsole.MarkupLine("[grey]Если он не указан, UPDATE затронет все языковые строки товара.[/]");
+    AnsiConsole.MarkupLine("[grey]Если указан только CSV, программа проверит все товары и создаст *_errors.csv.[/]");
+    AnsiConsole.MarkupLine("[grey]Если указан список ID, программа перейдёт в режим исправления.[/]");
     return;
 }
 
@@ -44,6 +46,22 @@ var inputPath = Path.GetFullPath(args[0]);
 if (!File.Exists(inputPath))
 {
     AnsiConsole.MarkupLine($"[red]Файл не найден:[/] {Markup.Escape(inputPath)}");
+    return;
+}
+
+if (args.Length == 1)
+{
+    try
+    {
+        ScanSourceFile(inputPath);
+    }
+    catch (Exception ex)
+    {
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine("[red bold]Во время проверки произошла ошибка:[/]");
+        AnsiConsole.WriteException(ex, ExceptionFormats.ShortenEverything);
+    }
+
     return;
 }
 
@@ -343,6 +361,194 @@ static List<string> CheckHtml(string html)
         .Select(error => $"{error.Code} (line {error.Line}, position {error.LinePosition})")
         .Distinct()
         .ToList();
+}
+
+static void ScanSourceFile(string inputPath)
+{
+    var delimiter = DetectDelimiter(inputPath);
+    var fileSize = new FileInfo(inputPath).Length;
+    var outputPath = Path.Combine(
+        Path.GetDirectoryName(inputPath)!,
+        Path.GetFileNameWithoutExtension(inputPath) + "_errors.csv");
+
+    AnsiConsole.MarkupLine($"[grey]Исходный CSV:[/] {Markup.Escape(inputPath)}");
+    AnsiConsole.MarkupLine($"[grey]Отчёт:[/]        {Markup.Escape(outputPath)}");
+    AnsiConsole.MarkupLine($"[grey]Разделитель:[/] {Markup.Escape(DisplayDelimiter(delimiter))}");
+    AnsiConsole.WriteLine();
+
+    var config = new CsvConfiguration(CultureInfo.InvariantCulture)
+    {
+        HasHeaderRecord = true,
+        Delimiter = delimiter,
+        DetectDelimiter = false,
+        IgnoreBlankLines = true,
+        TrimOptions = TrimOptions.None,
+        BufferSize = 1024 * 64
+    };
+
+    var errorsByProduct = new SortedDictionary<long, HashSet<string>>();
+    var allProductIds = new HashSet<long>();
+    var processedRows = 0L;
+    var rowsWithErrors = 0L;
+
+    using var inputStream = new FileStream(
+        inputPath,
+        FileMode.Open,
+        FileAccess.Read,
+        FileShare.Read,
+        bufferSize: 1024 * 64,
+        options: FileOptions.SequentialScan);
+
+    using var inputReader = new StreamReader(
+        inputStream,
+        Encoding.UTF8,
+        detectEncodingFromByteOrderMarks: true,
+        bufferSize: 1024 * 64,
+        leaveOpen: true);
+
+    using var csvReader = new CsvReader(inputReader, config);
+
+    if (!csvReader.Read())
+    {
+        AnsiConsole.MarkupLine("[yellow]CSV-файл пуст.[/]");
+        return;
+    }
+
+    csvReader.ReadHeader();
+
+    var headers = csvReader.HeaderRecord ?? Array.Empty<string>();
+    var productIdIndex = FindHeader(headers, "PRODUCT_ID");
+    var descriptionIndex = FindHeader(headers, "Description");
+
+    if (productIdIndex < 0 || descriptionIndex < 0)
+    {
+        AnsiConsole.MarkupLine("[red]Не найдены обязательные столбцы PRODUCT_ID и Description.[/]");
+        AnsiConsole.MarkupLine($"[grey]Обнаруженные заголовки:[/] {Markup.Escape(string.Join(" | ", headers))}");
+        return;
+    }
+
+    AnsiConsole.Progress()
+        .AutoClear(false)
+        .HideCompleted(false)
+        .Columns(
+            new TaskDescriptionColumn(),
+            new ProgressBarColumn(),
+            new PercentageColumn(),
+            new RemainingTimeColumn(),
+            new SpinnerColumn())
+        .Start(context =>
+        {
+            var task = context.AddTask("[green]Проверка HTML[/]", maxValue: Math.Max(fileSize, 1));
+            var lastUpdate = 0L;
+
+            while (csvReader.Read())
+            {
+                processedRows++;
+
+                var productIdText = csvReader.GetField(productIdIndex)?.Trim() ?? string.Empty;
+                if (!long.TryParse(
+                        productIdText,
+                        NumberStyles.Integer,
+                        CultureInfo.InvariantCulture,
+                        out var productId))
+                {
+                    continue;
+                }
+
+                allProductIds.Add(productId);
+
+                var description = csvReader.GetField(descriptionIndex) ?? string.Empty;
+                var decodedDescription = WebUtility.HtmlDecode(description);
+                var errors = CheckHtml(decodedDescription);
+
+                if (errors.Count > 0)
+                {
+                    rowsWithErrors++;
+
+                    if (!errorsByProduct.TryGetValue(productId, out var productErrors))
+                    {
+                        productErrors = new HashSet<string>(StringComparer.Ordinal);
+                        errorsByProduct.Add(productId, productErrors);
+                    }
+
+                    foreach (var error in errors)
+                        productErrors.Add(error);
+                }
+
+                if (processedRows - lastUpdate >= 250)
+                {
+                    task.Description =
+                        $"[green]Проверка HTML[/] [grey]Строк: {processedRows:N0} · Товаров с ошибками: {errorsByProduct.Count:N0}[/]";
+                    lastUpdate = processedRows;
+                }
+
+                task.Value = Math.Min(inputStream.Position, task.MaxValue);
+            }
+
+            task.Value = task.MaxValue;
+            task.Description =
+                $"[green]Проверка завершена[/] [grey]Строк: {processedRows:N0} · Товаров с ошибками: {errorsByProduct.Count:N0}[/]";
+        });
+
+    using (var outputWriter = new StreamWriter(
+        outputPath,
+        append: false,
+        new UTF8Encoding(encoderShouldEmitUTF8Identifier: true)))
+    using (var csvWriter = new CsvWriter(outputWriter, config))
+    {
+        csvWriter.WriteField("PRODUCT_ID");
+        csvWriter.WriteField("ERROR_COUNT");
+        csvWriter.WriteField("ERRORS");
+        csvWriter.NextRecord();
+
+        foreach (var product in errorsByProduct)
+        {
+            var errors = product.Value.OrderBy(error => error, StringComparer.Ordinal).ToArray();
+
+            csvWriter.WriteField(product.Key);
+            csvWriter.WriteField(errors.Length);
+            csvWriter.WriteField(string.Join("; ", errors));
+            csvWriter.NextRecord();
+        }
+    }
+
+    AnsiConsole.WriteLine();
+
+    var summary = new Table().Border(TableBorder.Rounded);
+    summary.AddColumn("[grey]Показатель[/]");
+    summary.AddColumn(new TableColumn("[grey]Количество[/]").RightAligned());
+    summary.AddRow("Строк CSV обработано", processedRows.ToString("N0"));
+    summary.AddRow("Уникальных товаров", allProductIds.Count.ToString("N0"));
+    summary.AddRow("Строк с ошибками", rowsWithErrors.ToString("N0"));
+    summary.AddRow("Товаров с ошибками", $"[bold red]{errorsByProduct.Count:N0}[/]");
+    summary.AddRow("Товаров без ошибок", (allProductIds.Count - errorsByProduct.Count).ToString("N0"));
+    AnsiConsole.Write(summary);
+
+    if (errorsByProduct.Count > 0)
+    {
+        var resultTable = new Table().Border(TableBorder.Rounded);
+        resultTable.AddColumn("[grey]PRODUCT_ID[/]");
+        resultTable.AddColumn(new TableColumn("[grey]Ошибок[/]").RightAligned());
+        resultTable.AddColumn("[grey]Описание ошибок[/]");
+
+        foreach (var product in errorsByProduct)
+        {
+            var errors = product.Value.OrderBy(error => error, StringComparer.Ordinal).ToArray();
+            resultTable.AddRow(
+                product.Key.ToString(CultureInfo.InvariantCulture),
+                errors.Length.ToString(CultureInfo.InvariantCulture),
+                Markup.Escape(string.Join("; ", errors)));
+        }
+
+        AnsiConsole.Write(resultTable);
+    }
+    else
+    {
+        AnsiConsole.MarkupLine("[green]Ошибок HTML-разметки не обнаружено.[/]");
+    }
+
+    AnsiConsole.WriteLine();
+    AnsiConsole.MarkupLine($"[green]Отчёт сохранён:[/] {Markup.Escape(outputPath)}");
 }
 
 static void WriteSqlFile(
