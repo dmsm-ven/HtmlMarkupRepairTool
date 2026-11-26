@@ -16,14 +16,14 @@ internal sealed class ProductRepairService
     {
         if (!TryParseProductIds(args[1], out var requestedIds, out var invalidIds))
         {
-            AnsiConsole.MarkupLine($"[red]Invalid product IDs:[/] {Markup.Escape(string.Join(", ", invalidIds))}");
-            AnsiConsole.MarkupLine("[grey]Use positive numeric IDs separated by commas.[/]");
+            AnsiConsole.MarkupLine($"[red]Некорректные ID товаров:[/] {Markup.Escape(string.Join(", ", invalidIds))}");
+            AnsiConsole.MarkupLine("[grey]Используй положительные числовые ID через запятую.[/]");
             return 1;
         }
 
-        if (requestedIds.Count == 0)
+        if (requestedIds.Количество == 0)
         {
-            AnsiConsole.MarkupLine("[yellow]The product ID list is empty.[/]");
+            AnsiConsole.MarkupLine("[yellow]Список ID пуст.[/]");
             return 1;
         }
 
@@ -33,7 +33,7 @@ internal sealed class ProductRepairService
             if (!int.TryParse(args[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedLanguageId)
                 || parsedLanguageId <= 0)
             {
-                AnsiConsole.MarkupLine("[red]language_id must be a positive integer.[/]");
+                AnsiConsole.MarkupLine("[red]language_id должен быть положительным целым числом.[/]");
                 return 1;
             }
 
@@ -47,22 +47,22 @@ internal sealed class ProductRepairService
 
         if (string.Equals(inputPath, outputPath, StringComparison.OrdinalIgnoreCase))
         {
-            AnsiConsole.MarkupLine("[red]Input CSV and output SQL paths must be different.[/]");
+            AnsiConsole.MarkupLine("[red]Пути входного CSV и выходного SQL должны отличаться.[/]");
             return 1;
         }
 
         var delimiter = CsvFileUtility.DetectDelimiter(inputPath);
         var fileSize = new FileInfo(inputPath).Length;
 
-        AnsiConsole.MarkupLine($"[grey]Input CSV:[/] {Markup.Escape(inputPath)}");
-        AnsiConsole.MarkupLine($"[grey]SQL file:[/]   {Markup.Escape(outputPath)}");
-        AnsiConsole.MarkupLine($"[grey]Products:[/]   {requestedIds.Count:N0}");
-        AnsiConsole.MarkupLine($"[grey]Delimiter:[/]  {Markup.Escape(CsvFileUtility.DisplayDelimiter(delimiter))}");
+        AnsiConsole.MarkupLine($"[grey]Входной CSV:[/] {Markup.Escape(inputPath)}");
+        AnsiConsole.MarkupLine($"[grey]SQL-файл:[/]   {Markup.Escape(outputPath)}");
+        AnsiConsole.MarkupLine($"[grey]Товаров:[/]   {requestedIds.Количество:N0}");
+        AnsiConsole.MarkupLine($"[grey]Разделитель:[/]  {Markup.Escape(CsvFileUtility.DisplayDelimiter(delimiter))}");
 
         if (languageId.HasValue)
             AnsiConsole.MarkupLine($"[grey]language_id:[/] {languageId.Value}");
         else
-            AnsiConsole.MarkupLine("[yellow]Warning: without language_id, UPDATE affects all language rows for each product.[/]");
+            AnsiConsole.MarkupLine("[yellow]Внимание: без language_id запрос обновит description во всех языковых строках каждого товара.[/]");
 
         AnsiConsole.WriteLine();
 
@@ -82,7 +82,7 @@ internal sealed class ProductRepairService
 
         if (!csvReader.Read())
         {
-            AnsiConsole.MarkupLine("[yellow]CSV file is empty.[/]");
+            AnsiConsole.MarkupLine("[yellow]CSV-файл пуст.[/]");
             return 0;
         }
 
@@ -93,8 +93,8 @@ internal sealed class ProductRepairService
 
         if (productIdIndex < 0 || descriptionIndex < 0)
         {
-            AnsiConsole.MarkupLine("[red]Required columns PRODUCT_ID and Description were not found.[/]");
-            AnsiConsole.MarkupLine($"[grey]Found headers:[/] {Markup.Escape(string.Join(" | ", headers))}");
+            AnsiConsole.MarkupLine("[red]Не найдены обязательные столбцы PRODUCT_ID и Description.[/]");
+            AnsiConsole.MarkupLine($"[grey]Обнаруженные заголовки:[/] {Markup.Escape(string.Join(" | ", headers))}");
             return 1;
         }
 
@@ -105,7 +105,7 @@ internal sealed class ProductRepairService
                 new PercentageColumn(), new RemainingTimeColumn(), new SpinnerColumn())
             .Start(context =>
             {
-                var task = context.AddTask("[green]Searching selected products[/]", maxValue: Math.Max(fileSize, 1));
+                var task = context.AddTask("[green]Поиск выбранных товаров[/]", maxValue: Math.Max(fileSize, 1));
                 var lastUpdate = 0L;
 
                 while (csvReader.Read())
@@ -133,7 +133,7 @@ internal sealed class ProductRepairService
                             {
                                 repairedProducts.Add(new RepairResult(
                                     productId, sourceDescription, encodedRepairedDescription,
-                                    beforeErrors.Count, afterErrors.Count));
+                                    beforeErrors.Количество, afterErrors.Количество));
                             }
                         }
                     }
@@ -141,7 +141,7 @@ internal sealed class ProductRepairService
                     if (processedRows - lastUpdate >= 250)
                     {
                         task.Description =
-                            $"[green]Searching products[/] [grey]Rows: {processedRows:N0} · IDs found: {foundIds.Count:N0}[/]";
+                            $"[green]Searching products[/] [grey]Строк: {processedСтрок:N0} · Найдено ID: {foundIds.Количество:N0}[/]";
                         lastUpdate = processedRows;
                     }
 
@@ -150,7 +150,7 @@ internal sealed class ProductRepairService
 
                 task.Value = task.MaxValue;
                 task.Description =
-                    $"[green]Search complete[/] [grey]Rows: {processedRows:N0} · IDs found: {foundIds.Count:N0}[/]";
+                    $"[green]Обработка завершена[/] [grey]Строк: {processedСтрок:N0} · Найдено ID: {foundIds.Количество:N0}[/]";
             });
 
         // Repeated product IDs are ambiguous without language_id in the export.
@@ -161,34 +161,34 @@ internal sealed class ProductRepairService
 
         AnsiConsole.WriteLine();
         var summary = new Table().Border(TableBorder.Rounded);
-        summary.AddColumn("[grey]Metric[/]");
-        summary.AddColumn(new TableColumn("[grey]Count[/]").RightAligned());
-        summary.AddRow("CSV rows processed", processedRows.ToString("N0"));
-        summary.AddRow("Requested IDs", requestedIds.Count.ToString("N0"));
-        summary.AddRow("Found IDs", foundIds.Count.ToString("N0"));
-        summary.AddRow("Modified and included in SQL", $"[bold green]{repairedProducts.Count:N0}[/]");
-        summary.AddRow("Duplicate IDs (skipped)", duplicateIds.Count > 0
-            ? $"[bold yellow]{duplicateIds.Count:N0}[/]" : "0");
-        summary.AddRow("Missing IDs", missingIds.Count > 0
-            ? $"[bold yellow]{missingIds.Count:N0}[/]" : "0");
+        summary.AddColumn("[grey]Показатель[/]");
+        summary.AddColumn(new TableColumn("[grey]Количество[/]").RightAligned());
+        summary.AddRow("Строк CSV обработано", processedRows.ToString("N0"));
+        summary.AddRow("Requested IDs", requestedIds.Количество.ToString("N0"));
+        summary.AddRow("Found IDs", foundIds.Количество.ToString("N0"));
+        summary.AddRow("Изменено и включено в SQL", $"[bold green]{repairedProducts.Количество:N0}[/]");
+        summary.AddRow("Дублирующихся ID (пропущено)", duplicateIds.Количество > 0
+            ? $"[bold yellow]{duplicateIds.Количество:N0}[/]" : "0");
+        summary.AddRow("Не найдено ID", missingIds.Количество > 0
+            ? $"[bold yellow]{missingIds.Количество:N0}[/]" : "0");
         AnsiConsole.Write(summary);
 
-        if (duplicateIds.Count > 0)
+        if (duplicateIds.Количество > 0)
         {
             AnsiConsole.MarkupLine(
-                $"[yellow]Skipped IDs with multiple CSV rows:[/] {Markup.Escape(string.Join(", ", duplicateIds.OrderBy(id => id)))}");
+                $"[yellow]Пропущены ID с несколькими строками в CSV:[/] {Markup.Escape(string.Join(", ", duplicateIds.OrderBy(id => id)))}");
             AnsiConsole.MarkupLine(
-                "[grey]Include language_id in the export to distinguish descriptions for different languages.[/]");
+                "[grey]Добавь language_id в экспорт, чтобы различать описания разных языков.[/]");
         }
 
-        if (missingIds.Count > 0)
-            AnsiConsole.MarkupLine($"[yellow]IDs not found:[/] {Markup.Escape(string.Join(", ", missingIds))}");
+        if (missingIds.Количество > 0)
+            AnsiConsole.MarkupLine($"[yellow]Не найдены ID:[/] {Markup.Escape(string.Join(", ", missingIds))}");
 
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"[green]SQL file saved:[/] {Markup.Escape(outputPath)}");
+        AnsiConsole.MarkupLine($"[green]SQL-файл сохранён:[/] {Markup.Escape(outputPath)}");
 
-        if (repairedProducts.Count == 0)
-            AnsiConsole.MarkupLine("[yellow]No changes detected. The SQL file contains no UPDATE statements.[/]");
+        if (repairedProducts.Количество == 0)
+            AnsiConsole.MarkupLine("[yellow]Изменений не обнаружено. SQL-файл не содержит UPDATE-запросов.[/]");
 
         return 0;
     }
@@ -207,7 +207,7 @@ internal sealed class ProductRepairService
                 invalidIds.Add(token);
         }
 
-        return invalidIds.Count == 0;
+        return invalidIds.Количество == 0;
     }
 
     private static void WriteSqlFile(
