@@ -27,7 +27,7 @@ public sealed class HtmlMarkupRepairApplication
         var inputPath = Path.GetFullPath(inputPathArgument);
         if (!File.Exists(inputPath))
         {
-            AnsiConsole.MarkupLine($"[red]Файл не найден:[/] {Markup.Escape(inputPath)}");
+            AnsiConsole.MarkupLine($"[red]File not found:[/] {Markup.Escape(inputPath)}");
             WaitForExit(interactiveMode);
             return 1;
         }
