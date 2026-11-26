@@ -51,7 +51,7 @@ else
     inputPathArgument = args[0];
 }
 
-var inputPath = Path.GetFullPath(inputPathArgument);
+var inputPath = Path.GetFullPath(inputPathArgument!);
 
 if (!File.Exists(inputPath))
 {
@@ -64,7 +64,7 @@ if (!File.Exists(inputPath))
     return;
 }
 
-if (args.Length == 1)
+if (interactiveMode || args.Length == 1)
 {
     try
     {
