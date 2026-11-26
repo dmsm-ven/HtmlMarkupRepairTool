@@ -383,7 +383,7 @@ static List<HtmlValidationError> CheckHtml(string html)
             HtmlParseErrorCode.EndTagInvalidHere)
         .Select(error =>
         {
-            var tagName = ExtractErrorTagName(html, error.StreamPosition, error.Code);
+            var tagName = ExtractErrorTagName(error.Reason);
             var tagLabel = tagName is null ? "unknown" : $"<{tagName}>";
             var message = $"{error.Code} {tagLabel} (line {error.Line}, position {error.LinePosition})";
 
@@ -393,28 +393,12 @@ static List<HtmlValidationError> CheckHtml(string html)
         .ToList();
 }
 
-static string? ExtractErrorTagName(string html, int streamPosition, HtmlParseErrorCode errorCode)
+static string? ExtractErrorTagName(string? reason)
 {
-    // HtmlAgilityPack reports the position of the parser error. Inspect a small
-    // window around it and prefer a closing tag for unexpected/invalid end tags.
-    var position = Math.Clamp(streamPosition, 0, html.Length);
-    var start = Math.Max(0, position - 512);
-    var length = Math.Min(html.Length - start, 1024);
-    var window = html.Substring(start, length);
-    var matches = Regex.Matches(window, @"<\s*(/?)\s*([a-zA-Z][a-zA-Z0-9:_-]*)\b[^>]*>");
-
-    if (matches.Count == 0)
-        return null;
-
-    var preferClosing = errorCode is HtmlParseErrorCode.TagNotOpened or HtmlParseErrorCode.EndTagInvalidHere;
-
-    var selected = matches
-        .Cast<Match>()
-        .OrderBy(match => Math.Abs((start + match.Index) - position))
-        .FirstOrDefault(match => (match.Groups[1].Value == "/") == preferClosing)
-        ?? matches.Cast<Match>().OrderBy(match => Math.Abs((start + match.Index) - position)).First();
-
-    return selected.Groups[2].Value.ToLowerInvariant();
+    // HtmlAgilityPack's Reason contains the exact missing/invalid tag name,
+    // e.g. "End tag </div> was not found" or "Start tag <div> was not found".
+    var match = Regex.Match(reason ?? string.Empty, @"</?\s*([a-zA-Z][a-zA-Z0-9:_-]*)\b");
+    return match.Success ? match.Groups[1].Value.ToLowerInvariant() : null;
 }
 
 static void ScanSourceFile(string inputPath)
