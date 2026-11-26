@@ -21,9 +21,9 @@ internal sealed class CsvValidationScanner
             Path.GetDirectoryName(inputPath)!,
             Path.GetFileNameWithoutExtension(inputPath) + "_errors.csv");
 
-        AnsiConsole.MarkupLine($"[grey]Source CSV:[/] {Markup.Escape(inputPath)}");
-        AnsiConsole.MarkupLine($"[grey]Report:[/]      {Markup.Escape(outputPath)}");
-        AnsiConsole.MarkupLine($"[grey]Delimiter:[/]   {Markup.Escape(CsvFileUtility.DisplayDelimiter(delimiter))}");
+        AnsiConsole.MarkupLine($"[grey]Исходный CSV:[/] {Markup.Escape(inputPath)}");
+        AnsiConsole.MarkupLine($"[grey]Отчёт:[/]      {Markup.Escape(outputPath)}");
+        AnsiConsole.MarkupLine($"[grey]Разделитель:[/]   {Markup.Escape(CsvFileUtility.DisplayDelimiter(delimiter))}");
         AnsiConsole.WriteLine();
 
         var config = CsvFileUtility.CreateConfiguration(delimiter);
@@ -55,7 +55,7 @@ internal sealed class CsvValidationScanner
         if (productIdIndex < 0 || descriptionIndex < 0)
         {
             AnsiConsole.MarkupLine("[red]Не найдены обязательные столбцы PRODUCT_ID и Description.[/]");
-            AnsiConsole.MarkupLine($"[grey]Found headers:[/] {Markup.Escape(string.Join(" | ", headers))}");
+            AnsiConsole.MarkupLine($"[grey]Обнаруженные заголовки:[/] {Markup.Escape(string.Join(" | ", headers))}");
             return;
         }
 
@@ -124,7 +124,7 @@ internal sealed class CsvValidationScanner
         ShowSummary(processedRows, allProductIds.Count, rowsWithErrors, errorsByProduct.Count);
         ShowProductErrors(errorsByProduct);
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"[green]Report saved:[/] {Markup.Escape(outputPath)}");
+        AnsiConsole.MarkupLine($"[green]Отчёт сохранён:[/] {Markup.Escape(outputPath)}");
     }
 
     private static HashSet<string> SelectTags(IReadOnlyDictionary<string, long> errorCountsByTag)
